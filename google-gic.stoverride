@@ -1,16 +1,65 @@
-name: "Chrome SNI Rewrite (Native)"
-desc: "Uses Stash native url-rewrite. No JS required."
+name: "Chrome SNI Rewrite (Doc Fixed)"
+desc: "Strictly follows Stash Wiki syntax. Forces Google/YT SNI to g.cn."
+icon: "https://raw.githubusercontent.com/stashapp-cn/resource/main/Icon/Other/Chrome.png"
+category: "Network Tools"
+date: "2025-12-01 16:30:00"
+
+# --- 1. Hosts 映射 ---
+# 这一步是终点：当脚本把域名改成 g.cn 后，Stash 将其解析为该 IP
 hosts:
-  'g.cn': 185.217.5.3
-mitm:
-  hostnames:
-    - '*.google.com'
-    - '*.youtube.com'
-    - '*.ytimg.com'
+  'g.cn': 220.181.174.34
+
+# --- 2. HTTP 引擎配置 (严格遵循 Wiki) ---
 http:
-  url-rewrite:
-    # 语法: Pattern Target Mode
-    # transparent 模式会静默重写 URL 并以此发起连接(修改 SNI)
-    - '^https?://(?:www\.|m\.)?youtube\.com/(.*) https://g.cn/$1 transparent'
-    - '^https?://(?:www\.|m\.)?google\.com/(.*) https://g.cn/$1 transparent'
-    - '^https?://(.*)\.ytimg\.com/(.*) https://g.cn/$2 transparent'
+  # [关键修正] 根据文档，mitm 必须在 http 下，且直接是列表
+  mitm:
+    - "*.google.com"
+    - "*.youtube.com"
+    - "*.ytimg.com"
+    - "*.ggpht.com"
+    - "youtube.com"
+    - "googleapis.com"
+    - "g.cn"
+
+  # 脚本配置
+  script:
+    # 匹配 Google/YouTube 并执行重写脚本
+    - match: ^https?://.*(google|youtube|ytimg|ggpht|googleapis)\.com
+      name: chrome_sni_fix
+      type: request
+      require-body: false
+      timeout: 10
+
+# --- 3. 脚本内容 ---
+script-providers:
+  chrome_sni_fix:
+    name: "Modify SNI to g.cn"
+    interval: 86400
+    content: |
+      /**
+       * Stash Script: SNI Rewrite
+       * 逻辑：修改请求 URL 的 Host 部分，迫使 Stash 使用新的 SNI 建立连接
+       */
+      
+      const TARGET_SNI = 'g.cn';
+      
+      const url = $request.url;
+      // 正则：提取协议(https://) 和 路径(/video...)
+      // 忽略中间原本的域名
+      const regex = /^(https?:\/\/)(?:[^\/]+)(.*)$/;
+      const match = url.match(regex);
+      
+      if (match) {
+          const protocol = match[1];
+          // 如果路径为空，补一个 /
+          const path = match[2] || "/";
+          
+          const newUrl = protocol + TARGET_SNI + path;
+          
+          console.log(`[SNI-Fix] ${url} -> ${newUrl}`);
+          
+          // 结束脚本，并返回新的 URL
+          $done({ url: newUrl });
+      } else {
+          $done({});
+      }
