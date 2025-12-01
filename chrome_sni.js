@@ -4,7 +4,7 @@
  */
 
 // 1. 定义目标 SNI
-var target_sni = "g.cn";
+var target_sni = "www.google.cn";
 
 // 2. 获取当前 URL 和 Headers
 var url = $request.url;
