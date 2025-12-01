@@ -7,7 +7,7 @@ date: "2025-12-01 14:00:00"
 # --- 1. Host Mapping (Equivalent to --host-resolver-rules) ---
 # Forces g.cn to resolve to the target IP
 hosts:
-  'g.cn': 185.217.5.3
+  'g.cn': 220.181.174.34
 
 # --- 2. HTTP Module (Uses the script for SNI/Target modification) ---
 http:
