@@ -1,83 +1,88 @@
-name: "Chrome HostRules Simulation"
-desc: "Redirects Google/YouTube to g.cn using Stash HTTP Rewrite. REQUIRES MitM."
+name: "Chrome SNI & Host Rewrite"
+desc: "Modifies SNI to g.cn and resolves to 185.217.5.3. Simulates Chrome --host-rules."
 icon: "https://raw.githubusercontent.com/stashapp-cn/resource/main/Icon/Other/Chrome.png"
 category: "Network Tools"
-date: "2025-12-01 14:30:00"
+date: "2025-12-01 15:10:00"
 
-# --- 1. Host Mapping ---
-# 这一步确保当脚本把域名改成 g.cn 后，Stash 会连接到指定的 IP
+# --- 1. Hosts 映射 ---
+# 当脚本把 URL 改为 g.cn 后，流量会走到这里，被导向指定 IP
 hosts:
   'g.cn': 220.181.174.34
 
-# --- 2. HTTP Rewrite Module ---
+# --- 2. MitM 配置 (关键！) ---
+# 必须解密这些域名，否则脚本无法“识别”和“重写”它们
+# 只有开启了 MitM，Stash 才能执行下面的脚本来修改 SNI
+mitm:
+  hostnames:
+    - '*.google.com'
+    - '*.youtube.com'
+    - '*.ytimg.com'
+    - '*.ggpht.com'
+    - 'youtube.com'
+    - 'googleapis.com'
+
+# --- 3. HTTP 重写规则 ---
 http:
   script:
-    # 匹配所有 HTTP/HTTPS 请求
-    # 注意：如果不开启 MitM，HTTPS 请求根本不会进到这里
-    - match: ^https?://.*
-      name: chrome_host_rewrite_script
+    # 匹配 Google 和 YouTube 的所有 HTTPS 请求
+    - match: ^https?://.*(google|youtube|ytimg|ggpht)\.com
+      name: modify_sni_script
       type: request
       require-body: false
       timeout: 10
 
-# --- 3. Script Logic ---
+# --- 4. 脚本逻辑 (修正了语法错误) ---
 script-providers:
-  chrome_host_rewrite_script:
-    name: "Chrome Host Rewrite Script"
+  modify_sni_script:
+    name: "Modify SNI to g.cn"
     interval: 86400
-    
-    # 修正：使用 'content' 字段存放代码
+    # 修正：Stash Override 必须使用 content 字段，且要注意缩进
     content: |
       /**
-       * Stash Script: Host Rewrite
-       * 依据文档：必须使用 $request.url 获取 URL，并使用 $done({ url: newUrl }) 结束
+       * 脚本功能：模拟 Chrome MAP * g.cn
+       * 逻辑：将请求的 Host 部分替换为 g.cn
+       * 结果：Stash 会用 g.cn 作为 SNI 连接 185.217.5.3
        */
       
-      // 原始 URL
-      const originalUrl = $request.url;
+      const TARGET_HOST = 'g.cn';
       
-      // 目标域名
-      const NEW_HOST = 'g.cn';
-      
-      // 定义需要重写的域名列表
-      // 包含：Google 及其子域名, YouTube 及其子域名, 静态资源域名
-      const MATCH_LIST = [
+      // 需要重写的域名关键字
+      const TARGET_DOMAINS = [
         'google.com',
-        'www.google.com',
         'youtube.com',
-        'www.youtube.com',
-        'm.youtube.com',
-        'i.ytimg.com',
-        'ggpht.com'
+        'ytimg.com',
+        'ggpht.com', 
+        'googleapis.com'
       ];
-      
-      // 简单的辅助函数：检查是否需要重写
-      function shouldRewrite(url) {
-        // 提取 URL 中的 Host 部分进行比对
-        // 格式通常是 https://www.google.com/search?...
-        for (let domain of MATCH_LIST) {
-          if (url.includes('://' + domain) || url.includes('.' + domain)) {
-             return true;
+
+      function main() {
+        const url = $request.url;
+        
+        // 简单检查：URL 中是否包含我们要改的域名
+        let shouldRewrite = false;
+        for (let domain of TARGET_DOMAINS) {
+          if (url.includes(domain)) {
+            shouldRewrite = true;
+            break;
           }
         }
-        return false;
-      }
-      
-      // --- 主逻辑 ---
-      
-      if (shouldRewrite(originalUrl)) {
-          // 使用正则简单替换 Host
-          // 这里的正则意思是：找到 // 之后，第一个 / 之前的部分，替换为 g.cn
-          // 例子: https://www.youtube.com/watch -> https://g.cn/watch
+
+        if (shouldRewrite) {
+          // 正则替换：将 :// 之后、第一个 / 之前的内容（即 Host）替换为 g.cn
+          // 示例: https://www.youtube.com/watch -> https://g.cn/watch
+          const newUrl = url.replace(/:\/\/[^\/]+/, '://' + TARGET_HOST);
           
-          const newUrl = originalUrl.replace(/:\/\/[^\/]+/, '://' + NEW_HOST);
+          // 如果你需要保留原始 Host Header 但只改 SNI，
+          // Stash 脚本通常改了 URL 后 Host Header 也会变。
+          // 如果这导致服务端报错，可以尝试显式加 headers 参数，但通常 g.cn 这种配置不需要。
           
-          console.log('[Rewrite] Redirecting to: ' + newUrl);
+          console.log('[SNI Rewrite] ' + url + ' -> ' + newUrl);
           
-          // 核心修正：按照文档要求，通过 $done 返回修改后的 URL
           $done({ url: newUrl });
-          
-      } else {
-          // 不需要修改，直接放行
+        } else {
           $done({});
+        }
       }
+      
+      // 执行入口
+      main();
