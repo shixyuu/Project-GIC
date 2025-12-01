@@ -1,6 +1,5 @@
 name: "Chrome SNI Fix (ES5 Safe)"
 desc: "ES5-compatible script to fix SNI and 502 errors. Removes 'Script not ready' issues."
-icon: "https://raw.githubusercontent.com/stashapp-cn/resource/main/Icon/Other/Chrome.png"
 category: "Network Tools"
 date: "2025-12-01 18:30:00"
 
