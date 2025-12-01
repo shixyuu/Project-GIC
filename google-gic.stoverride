@@ -1,17 +1,17 @@
-name: "Chrome SNI Rewrite (Doc Fixed)"
-desc: "Strictly follows Stash Wiki syntax. Forces Google/YT SNI to g.cn."
+name: "Chrome SNI Native Rewrite"
+desc: "Uses native url-rewrite to map Google/YT SNI to g.cn. No JS needed."
 icon: "https://raw.githubusercontent.com/stashapp-cn/resource/main/Icon/Other/Chrome.png"
 category: "Network Tools"
-date: "2025-12-01 16:30:00"
+date: "2025-12-01 17:00:00"
 
 # --- 1. Hosts 映射 ---
-# 这一步是终点：当脚本把域名改成 g.cn 后，Stash 将其解析为该 IP
+# 重写后的域名 g.cn 会被解析到这个 IP
 hosts:
   'g.cn': 220.181.174.34
 
-# --- 2. HTTP 引擎配置 (严格遵循 Wiki) ---
+# --- 2. HTTP 引擎配置 ---
 http:
-  # [关键修正] 根据文档，mitm 必须在 http 下，且直接是列表
+  # 必须开启 MitM，否则 url-rewrite 无法匹配 HTTPS 请求
   mitm:
     - "*.google.com"
     - "*.youtube.com"
@@ -21,45 +21,22 @@ http:
     - "googleapis.com"
     - "g.cn"
 
-  # 脚本配置
-  script:
-    # 匹配 Google/YouTube 并执行重写脚本
-    - match: ^https?://.*(google|youtube|ytimg|ggpht|googleapis)\.com
-      name: chrome_sni_fix
-      type: request
-      require-body: false
-      timeout: 10
-
-# --- 3. 脚本内容 ---
-script-providers:
-  chrome_sni_fix:
-    name: "Modify SNI to g.cn"
-    interval: 86400
-    content: |
-      /**
-       * Stash Script: SNI Rewrite
-       * 逻辑：修改请求 URL 的 Host 部分，迫使 Stash 使用新的 SNI 建立连接
-       */
-      
-      const TARGET_SNI = 'g.cn';
-      
-      const url = $request.url;
-      // 正则：提取协议(https://) 和 路径(/video...)
-      // 忽略中间原本的域名
-      const regex = /^(https?:\/\/)(?:[^\/]+)(.*)$/;
-      const match = url.match(regex);
-      
-      if (match) {
-          const protocol = match[1];
-          // 如果路径为空，补一个 /
-          const path = match[2] || "/";
-          
-          const newUrl = protocol + TARGET_SNI + path;
-          
-          console.log(`[SNI-Fix] ${url} -> ${newUrl}`);
-          
-          // 结束脚本，并返回新的 URL
-          $done({ url: newUrl });
-      } else {
-          $done({});
-      }
+  # --- 3. 原生 URL 重写 (核心部分) ---
+  # 语法：- Pattern Target Mode
+  # Mode: transparent (透明重写，不通知客户端，直接修改请求发往目标)
+  # $1, $2 代表正则捕获组
+  url-rewrite:
+    # 匹配 Google 所有子域名
+    # 例子: https://www.google.com/search?q=1 -> https://g.cn/search?q=1
+    - ^https?://[^/]*google\.com/(.*) https://g.cn/$1 transparent
+    
+    # 匹配 YouTube 所有子域名
+    # 例子: https://m.youtube.com/watch?v=... -> https://g.cn/watch?v=...
+    - ^https?://[^/]*youtube\.com/(.*) https://g.cn/$1 transparent
+    
+    # 匹配 Google API
+    - ^https?://[^/]*googleapis\.com/(.*) https://g.cn/$1 transparent
+    
+    # 匹配 YouTube 静态资源 (ytimg, ggpht)
+    - ^https?://[^/]*ytimg\.com/(.*) https://g.cn/$1 transparent
+    - ^https?://[^/]*ggpht\.com/(.*) https://g.cn/$1 transparent
