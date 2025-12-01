@@ -1,31 +1,32 @@
-name: Chrome HostRules Simulation
-desc: Simulates Chrome's --host-rules and --host-resolver-rules configurations for forced domain redirection and IP resolution, necessary for modifying SNI/target host.
-category: Network Tools
+name: "Chrome HostRules Simulation"
+desc: "Simulates Chrome's --host-rules and --host-resolver-rules configurations for forced domain redirection and IP resolution."
+icon: "https://raw.githubusercontent.com/stashapp-cn/resource/main/Icon/Other/Chrome.png"
+category: "Network Tools"
 date: "2025-12-01 14:00:00"
 
 # --- 1. Host Mapping (Equivalent to --host-resolver-rules) ---
 # Forces g.cn to resolve to the target IP
 hosts:
-  'g.cn': 220.181.174.34
+  'g.cn': 185.217.5.3
 
 # --- 2. HTTP Module (Uses the script for SNI/Target modification) ---
 http:
   script:
-    # Match all http/https traffic
+    # Match all http/https traffic to ensure we catch the target domains
     - match: ^https?://.*
-      name: chrome_host_rewrite_script # Reference to the script-providers entry below
-      type: request # Modify during the request phase before connection is established
-      require-body: false # No need for request or response body, optimizing performance
+      name: chrome_host_rewrite_script
+      type: request
+      require-body: false
+      timeout: 10
 
 # --- 3. Script Providers (The actual optimized JavaScript code) ---
 script-providers:
   chrome_host_rewrite_script:
-    name: Chrome Host Rewrite Script
-    url: # External URL can be left empty since we use inline
-    interval: 86400 # Check interval (24 hours)
+    name: "Chrome Host Rewrite Script"
+    interval: 86400
     
     # Embedding the optimized JS script directly
-    inline: |
+    script: |
       /**
        * Stash JavaScript Script: Optimized Host Rewrite
        * Goal: Implement Chrome --host-rules="MAP google g.cn,MAP *youtube.com g.cn,..." 
@@ -33,7 +34,8 @@ script-providers:
        */
       
       // --- Performance Optimization: Define matching lists as constants ---
-      // 1. Exact matches (using Set for near O(1) lookup time)
+      
+      // 1. Exact matches (using Set for O(1) lookup time)
       const EXACT_HOSTS = new Set([
           'google', 
           'i.ytimg.com'
@@ -69,7 +71,7 @@ script-providers:
           // B. Check Suffix/Wildcard Matches (Optimized loop)
           if (!shouldRewrite) {
               for (const suffix of SUFFIXES_TO_MAP) {
-                  // Checks for *.domain.com (endsWith('.domain.com')) or domain.com (host === 'domain.com')
+                  // Checks for *.domain.com (endsWith) or domain.com (exact match)
                   if (host === suffix || host.endsWith('.' + suffix)) {
                       shouldRewrite = true;
                       break; // Exit loop immediately upon finding a match
