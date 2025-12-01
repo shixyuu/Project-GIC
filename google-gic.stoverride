@@ -1,0 +1,88 @@
+name: Chrome HostRules Simulation
+desc: Simulates Chrome's --host-rules and --host-resolver-rules configurations for forced domain redirection and IP resolution, necessary for modifying SNI/target host.
+category: Network Tools
+date: "2025-12-01 14:00:00"
+
+# --- 1. Host Mapping (Equivalent to --host-resolver-rules) ---
+# Forces g.cn to resolve to the target IP
+hosts:
+  'g.cn': 185.217.5.3
+
+# --- 2. HTTP Module (Uses the script for SNI/Target modification) ---
+http:
+  script:
+    # Match all http/https traffic
+    - match: ^https?://.*
+      name: chrome_host_rewrite_script # Reference to the script-providers entry below
+      type: request # Modify during the request phase before connection is established
+      require-body: false # No need for request or response body, optimizing performance
+
+# --- 3. Script Providers (The actual optimized JavaScript code) ---
+script-providers:
+  chrome_host_rewrite_script:
+    name: Chrome Host Rewrite Script
+    url: # External URL can be left empty since we use inline
+    interval: 86400 # Check interval (24 hours)
+    
+    # Embedding the optimized JS script directly
+    inline: |
+      /**
+       * Stash JavaScript Script: Optimized Host Rewrite
+       * Goal: Implement Chrome --host-rules="MAP google g.cn,MAP *youtube.com g.cn,..." 
+       * by modifying the connection target (which includes SNI).
+       */
+      
+      // --- Performance Optimization: Define matching lists as constants ---
+      // 1. Exact matches (using Set for near O(1) lookup time)
+      const EXACT_HOSTS = new Set([
+          'google', 
+          'i.ytimg.com'
+      ]);
+      
+      // 2. Wildcard/Suffix matches (*.domain.com and domain.com)
+      const SUFFIXES_TO_MAP = [
+          'youtube.com', 
+          'ggpht.com'
+      ];
+      
+      // Target domain after rewrite
+      const NEW_HOST = 'g.cn';
+      
+      // --- Main Script Function ---
+      function main(context) {
+          const originalHost = context.targetHost;
+          
+          if (!originalHost) {
+              return context;
+          }
+
+          // Convert to lower case once for case-insensitive matching
+          const host = originalHost.toLowerCase();
+          
+          let shouldRewrite = false;
+
+          // A. Check Exact Matches (O(1) lookup)
+          if (EXACT_HOSTS.has(host)) {
+              shouldRewrite = true;
+          } 
+          
+          // B. Check Suffix/Wildcard Matches (Optimized loop)
+          if (!shouldRewrite) {
+              for (const suffix of SUFFIXES_TO_MAP) {
+                  // Checks for *.domain.com (endsWith('.domain.com')) or domain.com (host === 'domain.com')
+                  if (host === suffix || host.endsWith('.' + suffix)) {
+                      shouldRewrite = true;
+                      break; // Exit loop immediately upon finding a match
+                  }
+              }
+          }
+          
+          // If a rewrite is required, modify the connection target/SNI
+          if (shouldRewrite) {
+              // **Crucial step: Modifies the target host and SNI**
+              context.targetHost = NEW_HOST; 
+              console.log(`[HostRewrite] Rewritten target from ${originalHost} to ${NEW_HOST}`);
+          }
+
+          return context;
+      }
