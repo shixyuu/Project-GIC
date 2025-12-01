@@ -1,89 +1,62 @@
 name: "Chrome HostRules Simulation"
-desc: "Simulates Chrome's --host-rules and --host-resolver-rules configurations for forced domain redirection and IP resolution."
+desc: "Simulates Chrome's --host-rules via Stash Script. Requires MitM for HTTPS."
 icon: "https://raw.githubusercontent.com/stashapp-cn/resource/main/Icon/Other/Chrome.png"
 category: "Network Tools"
-date: "2025-12-01 14:08:00"
+date: "2025-12-01 14:10:00"
 
-# --- 1. Host Mapping (Equivalent to --host-resolver-rules) ---
-# Forces g.cn to resolve to the target IP
+# --- 1. Host Mapping ---
 hosts:
   'g.cn': 220.181.174.34
 
-# --- 2. HTTP Module (Uses the script for SNI/Target modification) ---
+# --- 2. HTTP Module ---
+# 注意：这需要开启 MitM 才能对 HTTPS 生效
 http:
   script:
-    # Match all http/https traffic to ensure we catch the target domains
     - match: ^https?://.*
       name: chrome_host_rewrite_script
       type: request
       require-body: false
       timeout: 10
 
-# --- 3. Script Providers (The actual optimized JavaScript code) ---
+# --- 3. Script Providers ---
 script-providers:
   chrome_host_rewrite_script:
     name: "Chrome Host Rewrite Script"
     interval: 86400
-    
-    # Embedding the optimized JS script directly
-    script: |
+    # 修正点：这里必须使用 'content' 而不是 'script' 或 'inline'
+    content: |
       /**
-       * Stash JavaScript Script: Optimized Host Rewrite
-       * Goal: Implement Chrome --host-rules="MAP google g.cn,MAP *youtube.com g.cn,..." 
-       * by modifying the connection target (which includes SNI).
+       * Stash Script: Host Rewrite
        */
       
-      // --- Performance Optimization: Define matching lists as constants ---
-      
-      // 1. Exact matches (using Set for O(1) lookup time)
-      const EXACT_HOSTS = new Set([
-          'google', 
-          'i.ytimg.com'
-      ]);
-      
-      // 2. Wildcard/Suffix matches (*.domain.com and domain.com)
-      const SUFFIXES_TO_MAP = [
-          'youtube.com', 
-          'ggpht.com'
-      ];
-      
-      // Target domain after rewrite
+      const EXACT_HOSTS = new Set(['google', 'i.ytimg.com']);
+      const SUFFIXES_TO_MAP = ['youtube.com', 'ggpht.com'];
       const NEW_HOST = 'g.cn';
       
-      // --- Main Script Function ---
       function main(context) {
-          const originalHost = context.targetHost;
-          
-          if (!originalHost) {
-              return context;
-          }
+          // 安全检查
+          if (!context.targetHost) return context;
 
-          // Convert to lower case once for case-insensitive matching
-          const host = originalHost.toLowerCase();
-          
+          const host = context.targetHost.toLowerCase();
           let shouldRewrite = false;
 
-          // A. Check Exact Matches (O(1) lookup)
+          // 1. 精确匹配
           if (EXACT_HOSTS.has(host)) {
               shouldRewrite = true;
           } 
-          
-          // B. Check Suffix/Wildcard Matches (Optimized loop)
-          if (!shouldRewrite) {
+          // 2. 后缀匹配
+          else {
               for (const suffix of SUFFIXES_TO_MAP) {
-                  // Checks for *.domain.com (endsWith) or domain.com (exact match)
                   if (host === suffix || host.endsWith('.' + suffix)) {
                       shouldRewrite = true;
-                      break; // Exit loop immediately upon finding a match
+                      break;
                   }
               }
           }
           
-          // If a rewrite is required, modify the connection target/SNI
           if (shouldRewrite) {
-              // **Crucial step: Modifies the target host and SNI**
               context.targetHost = NEW_HOST; 
-              console.log(`[HostRewrite] Rewritten target from ${originalHost} to ${NEW_HOST}`);
+              console.log(`[Rewrite] ${host} -> ${NEW_HOST}`);
           }
 
           return context;
