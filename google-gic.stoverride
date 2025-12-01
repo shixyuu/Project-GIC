@@ -1,4 +1,4 @@
-name: "Chrome SNI Native Rewrite"
+name: "Chrome SNI Native Rewrite v2"
 desc: "Uses native url-rewrite to map Google/YT SNI to g.cn. No JS needed."
 icon: "https://raw.githubusercontent.com/stashapp-cn/resource/main/Icon/Other/Chrome.png"
 category: "Network Tools"
