@@ -1,16 +1,15 @@
-name: "Chrome SNI Fix (Final)"
-desc: "Strict JS implementation based on Stash Docs to modify SNI to g.cn."
+name: "Chrome SNI Fix (ES5 Safe)"
+desc: "ES5-compatible script to fix SNI and 502 errors. Removes 'Script not ready' issues."
+icon: "https://raw.githubusercontent.com/stashapp-cn/resource/main/Icon/Other/Chrome.png"
 category: "Network Tools"
-date: "2025-12-01 18:00:00"
+date: "2025-12-01 18:30:00"
 
 # --- 1. Hosts 映射 ---
-# 将 g.cn 指向目标 IP
 hosts:
   'g.cn': 220.181.174.34
 
-# --- 2. HTTP 配置 ---
+# --- 2. HTTP 引擎 ---
 http:
-  # MitM 必须在 http 下，且为列表格式
   mitm:
     - "*.google.com"
     - "*.youtube.com"
@@ -21,70 +20,61 @@ http:
     - "g.cn"
 
   script:
-    # 匹配正则
     - match: ^https?://.*(google|youtube|ytimg|ggpht|googleapis)\.com
-      name: sni_fix_runner
+      name: chrome_sni_es5
       type: request
       require-body: false
       timeout: 10
 
-# --- 3. 脚本内容 ---
+# --- 3. 脚本内容 (使用 ES5 语法) ---
 script-providers:
-  sni_fix_runner:
-    name: "Chrome SNI Fix Script"
-    interval: 86400
+  chrome_sni_es5:
+    # 本地脚本不需要 interval，删除以防干扰
     content: |
       /**
-       * Stash Script: SNI Rewrite
-       * 依据文档使用 $request 和 $done
+       * Stash Script: ES5 Version
+       * 避免使用 let, const, ...spread 等新语法，防止 Script Not Ready
        */
       
-      // 目标 SNI
       var target_sni = "g.cn";
-      
-      // 获取当前 URL 和 Headers
       var url = $request.url;
       var headers = $request.headers;
       
-      // 1. 提取原始 Host (用于防止 502)
-      // Stash 的 headers key 可能是小写，做个兼容
+      // 1. 获取原始 Host (兼容大小写)
+      // 在 JS 引擎中，headers 可能是只读的，所以不能直接修改
       var original_host = headers['Host'] || headers['host'];
       
-      // 2. 正则替换 URL 中的 Host 部分
-      // 匹配: https://(任意内容)/(路径)
+      // 2. 正则匹配
       var regex = /^(https?:\/\/)(?:[^\/]+)(.*)$/;
       var match = url.match(regex);
       
-      if (match && original_host) {
+      if (match) {
           var protocol = match[1];
           var path = match[2] || "/";
-          
-          // 构造新 URL (SNI 将变为 g.cn)
           var new_url = protocol + target_sni + path;
           
-          // 3. 关键：处理 Headers
-          // 我们必须克隆一份 headers，强制把 Host 写回原来的域名
-          // 否则 Stash 会自动把 Host 改成 g.cn，导致服务器返回 502
-          var new_headers = JSON.parse(JSON.stringify(headers));
-          
-          // 确保保留原始 Host
-          if (new_headers['Host']) {
-              new_headers['Host'] = original_host;
-          } else {
-              new_headers['host'] = original_host;
+          // 3. 手动复制 Headers (避免使用 ES6 spread 语法)
+          var new_headers = {};
+          for (var key in headers) {
+              new_headers[key] = headers[key];
           }
           
-          console.log("[SNI-Fix] Rewriting SNI to: " + target_sni);
-          console.log("[SNI-Fix] Keeping Host as: " + original_host);
+          // 4. 强制覆盖 Host，解决 502 问题
+          if (original_host) {
+              // 移除可能存在的不同大小写的 Host 键，确保唯一性
+              if (new_headers['host']) delete new_headers['host'];
+              if (new_headers['Host']) delete new_headers['Host'];
+              
+              // 写入原始 Host
+              new_headers['Host'] = original_host;
+          }
           
-          // 4. 结束脚本
-          // 同时返回 url 和 headers
+          console.log("[SNI-ES5] Rewriting to: " + new_url);
+          
           $done({
               url: new_url,
               headers: new_headers
           });
       } else {
-          // 如果没匹配到或出错，原样放行
-          console.log("[SNI-Fix] No match or missing host, skipping.");
           $done({});
       }
