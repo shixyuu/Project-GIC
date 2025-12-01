@@ -1,63 +1,83 @@
 name: "Chrome HostRules Simulation"
-desc: "Simulates Chrome's --host-rules via Stash Script. Requires MitM for HTTPS."
+desc: "Redirects Google/YouTube to g.cn using Stash HTTP Rewrite. REQUIRES MitM."
 icon: "https://raw.githubusercontent.com/stashapp-cn/resource/main/Icon/Other/Chrome.png"
 category: "Network Tools"
-date: "2025-12-01 14:10:00"
+date: "2025-12-01 14:30:00"
 
 # --- 1. Host Mapping ---
+# 这一步确保当脚本把域名改成 g.cn 后，Stash 会连接到指定的 IP
 hosts:
   'g.cn': 220.181.174.34
 
-# --- 2. HTTP Module ---
-# 注意：这需要开启 MitM 才能对 HTTPS 生效
+# --- 2. HTTP Rewrite Module ---
 http:
   script:
+    # 匹配所有 HTTP/HTTPS 请求
+    # 注意：如果不开启 MitM，HTTPS 请求根本不会进到这里
     - match: ^https?://.*
       name: chrome_host_rewrite_script
       type: request
       require-body: false
       timeout: 10
 
-# --- 3. Script Providers ---
+# --- 3. Script Logic ---
 script-providers:
   chrome_host_rewrite_script:
     name: "Chrome Host Rewrite Script"
     interval: 86400
-    # 修正点：这里必须使用 'content' 而不是 'script' 或 'inline'
+    
+    # 修正：使用 'content' 字段存放代码
     content: |
       /**
        * Stash Script: Host Rewrite
+       * 依据文档：必须使用 $request.url 获取 URL，并使用 $done({ url: newUrl }) 结束
        */
       
-      const EXACT_HOSTS = new Set(['google', 'i.ytimg.com']);
-      const SUFFIXES_TO_MAP = ['youtube.com', 'ggpht.com'];
+      // 原始 URL
+      const originalUrl = $request.url;
+      
+      // 目标域名
       const NEW_HOST = 'g.cn';
       
-      function main(context) {
-          // 安全检查
-          if (!context.targetHost) return context;
-
-          const host = context.targetHost.toLowerCase();
-          let shouldRewrite = false;
-
-          // 1. 精确匹配
-          if (EXACT_HOSTS.has(host)) {
-              shouldRewrite = true;
-          } 
-          // 2. 后缀匹配
-          else {
-              for (const suffix of SUFFIXES_TO_MAP) {
-                  if (host === suffix || host.endsWith('.' + suffix)) {
-                      shouldRewrite = true;
-                      break;
-                  }
-              }
+      // 定义需要重写的域名列表
+      // 包含：Google 及其子域名, YouTube 及其子域名, 静态资源域名
+      const MATCH_LIST = [
+        'google.com',
+        'www.google.com',
+        'youtube.com',
+        'www.youtube.com',
+        'm.youtube.com',
+        'i.ytimg.com',
+        'ggpht.com'
+      ];
+      
+      // 简单的辅助函数：检查是否需要重写
+      function shouldRewrite(url) {
+        // 提取 URL 中的 Host 部分进行比对
+        // 格式通常是 https://www.google.com/search?...
+        for (let domain of MATCH_LIST) {
+          if (url.includes('://' + domain) || url.includes('.' + domain)) {
+             return true;
           }
+        }
+        return false;
+      }
+      
+      // --- 主逻辑 ---
+      
+      if (shouldRewrite(originalUrl)) {
+          // 使用正则简单替换 Host
+          // 这里的正则意思是：找到 // 之后，第一个 / 之前的部分，替换为 g.cn
+          // 例子: https://www.youtube.com/watch -> https://g.cn/watch
           
-          if (shouldRewrite) {
-              context.targetHost = NEW_HOST; 
-              console.log(`[Rewrite] ${host} -> ${NEW_HOST}`);
-          }
-
-          return context;
+          const newUrl = originalUrl.replace(/:\/\/[^\/]+/, '://' + NEW_HOST);
+          
+          console.log('[Rewrite] Redirecting to: ' + newUrl);
+          
+          // 核心修正：按照文档要求，通过 $done 返回修改后的 URL
+          $done({ url: newUrl });
+          
+      } else {
+          // 不需要修改，直接放行
+          $done({});
       }
