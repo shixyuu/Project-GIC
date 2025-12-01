@@ -1,6 +1,5 @@
 name: "Chrome SNI Fix (Final)"
 desc: "Strict JS implementation based on Stash Docs to modify SNI to g.cn."
-icon: "https://raw.githubusercontent.com/stashapp-cn/resource/main/Icon/Other/Chrome.png"
 category: "Network Tools"
 date: "2025-12-01 18:00:00"
 
